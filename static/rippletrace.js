@@ -1,7 +1,11 @@
 "use strict";
 
 const get = (id) => document.getElementById(id);
-const state = {card: null, result: null, photo: null, probe: null, mode: "probe", chart: "profile", busy: false};
+const state = {
+  card: null, result: null, photo: null, probe: null,
+  mode: "probe", chart: "profile", busy: false,
+  marks: [], fit: null, ring: null, fitStale: false,
+};
 const settings = [...document.querySelectorAll("[data-setting]")];
 
 async function api(path, options) {
@@ -37,6 +41,8 @@ async function action(work, target = "notice") {
   } finally {
     state.busy = false;
     document.querySelectorAll("button, select").forEach((node) => { node.disabled = false; });
+    const apply = get("apply-fit");
+    if (apply) apply.disabled = !(state.card && state.fit?.feasible);
   }
 }
 
@@ -57,6 +63,7 @@ function paintSource() {
   canvas.height = card.height;
   ctx.drawImage(photo, 0, 0);
   const cfg = card.settings;
+  const fit = activeFit();
   ctx.strokeStyle = "#84aebc";
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 5]);
@@ -64,6 +71,18 @@ function paintSource() {
     ctx.beginPath();
     ctx.arc(cfg.center_x, cfg.center_y, radius, 0, Math.PI * 2);
     ctx.stroke();
+  }
+  if (fit?.feasible && Number.isFinite(fit.radius_px)) {
+    ctx.strokeStyle = "#ffd166";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([9, 5]);
+    ctx.beginPath();
+    ctx.arc(fit.center_x, fit.center_y, fit.radius_px, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#ffd166";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(fit.center_x - 5, fit.center_y - 5, 10, 10);
   }
   ctx.setLineDash([]);
   ctx.strokeStyle = "#8de0cf";
@@ -82,6 +101,21 @@ function paintSource() {
     ctx.arc(result.reading.x, result.reading.y, 6, 0, Math.PI * 2);
     ctx.stroke();
   }
+  state.marks.forEach((mark, index) => {
+    const annotation = fitAnnotation(mark);
+    let color = "#f5e5e9";
+    if (annotation?.rgb_clipped) color = "#9aa7b4";
+    else if (annotation?.adopted === true) color = "#7dffb0";
+    else if (annotation?.adopted === false) color = "#ff7b7b";
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(mark.x, mark.y, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(String(index + 1), mark.x + 8, mark.y - 7);
+  });
   if (probe) {
     ctx.strokeStyle = "#f5e5e9";
     ctx.strokeRect(probe.x - 6, probe.y - 6, 12, 12);
@@ -140,13 +174,218 @@ function paintChart() {
   }
 }
 
+function activeFit() {
+  if (state.fit && !state.fitStale) return state.fit;
+  return state.card?.ring_fit || null;
+}
+
+function samePoint(item, mark) {
+  return item && (String(item.id || "") === String(mark.id || "") ||
+    (Number(item.x) === Number(mark.x) && Number(item.y) === Number(mark.y)));
+}
+
+function fitAnnotation(mark) {
+  const fit = activeFit();
+  const sources = [fit?.points, state.ring?.points, state.card?.ring_fit?.points];
+  for (const points of sources) {
+    const found = (points || []).find((item) => samePoint(item, mark));
+    if (found) return found;
+  }
+  return null;
+}
+
+function markRgb(mark, annotation) {
+  const rgb = annotation?.original_rgb || annotation?.rgb || mark.rgb ||
+    state.ring?.points?.find((p) => samePoint(p, mark))?.rgb;
+  return Array.isArray(rgb) ? rgb : null;
+}
+
+function formatError(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2) : "—";
+}
+
+function quadrantText(value) {
+  return ({
+    right_down: "右下 Q1",
+    left_down: "左下 Q2",
+    left_up: "左上 Q3",
+    right_up: "右上 Q4",
+    axis: "坐标轴",
+  })[value] || "—";
+}
+
+function markQuadrant(mark, annotation) {
+  if (annotation?.quadrant) return annotation.quadrant;
+  const cfg = state.card?.settings;
+  if (!cfg) return null;
+  if (mark.x > cfg.center_x && mark.y > cfg.center_y) return "right_down";
+  if (mark.x < cfg.center_x && mark.y > cfg.center_y) return "left_down";
+  if (mark.x < cfg.center_x && mark.y < cfg.center_y) return "left_up";
+  if (mark.x > cfg.center_x && mark.y < cfg.center_y) return "right_up";
+  return "axis";
+}
+
+function renderFitSummary() {
+  const element = get("fit-summary");
+  const apply = get("apply-fit");
+  const fit = state.fit;
+  if (!fit) {
+    element.hidden = true;
+    element.textContent = "";
+    apply.disabled = true;
+    return;
+  }
+  element.hidden = false;
+  if (fit.feasible) {
+    const quadrants = fit.quadrants?.counts?.join("/") || "—";
+    element.textContent = (state.fitStale ? "限差或标点已改动，旧建议仅供参考，请重新建议。 " : "") +
+      `${fit.message} 四象限采用点数 ${quadrants}（右下/左下/左上/右上），RMSE ${formatError(fit.rmse_px)} px。`;
+    apply.disabled = state.busy;
+  } else {
+    element.textContent = fit.message || "没有满足全部约束的圆心。";
+    apply.disabled = true;
+  }
+}
+
+function renderMarks() {
+  const rows = get("mark-rows");
+  rows.replaceChildren();
+  get("marks-empty").hidden = state.marks.length > 0;
+  state.marks.forEach((mark, index) => {
+    const annotation = fitAnnotation(mark);
+    const rgb = markRgb(mark, annotation);
+    const tr = document.createElement("tr");
+    tr.dataset.markId = mark.id;
+    tr.dataset.x = String(mark.x);
+    tr.dataset.y = String(mark.y);
+
+    const indexCell = document.createElement("td");
+    indexCell.textContent = String(index + 1);
+    tr.append(indexCell);
+
+    for (const value of [mark.x, mark.y]) {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      tr.append(cell);
+    }
+
+    const rgbCell = document.createElement("td");
+    rgbCell.className = "rgb-cell";
+    rgbCell.textContent = rgb ? rgb.join("/") : "读取中";
+    if (annotation?.rgb_clipped || rgb?.some((v) => v === 0 || v === 255)) {
+      rgbCell.classList.add("rgb-clipped");
+      rgbCell.title = "任一通道为 0 或 255，该点不会用于拟合";
+    }
+    tr.append(rgbCell);
+
+    const toleranceCell = document.createElement("td");
+    const tolerance = document.createElement("input");
+    tolerance.className = "mark-tolerance";
+    tolerance.type = "number";
+    tolerance.min = "0";
+    tolerance.step = "any";
+    tolerance.required = true;
+    tolerance.placeholder = "最大像素数";
+    tolerance.value = mark.tolerance_px ?? 2;
+    tolerance.dataset.markId = mark.id;
+    tolerance.setAttribute("aria-label", `标点 ${index + 1} 的最大像素差`);
+    toleranceCell.append(tolerance);
+    tr.append(toleranceCell);
+
+    const quadrantCell = document.createElement("td");
+    quadrantCell.className = "quadrant-cell";
+    quadrantCell.textContent = quadrantText(markQuadrant(mark, annotation));
+    tr.append(quadrantCell);
+
+    const statusCell = document.createElement("td");
+    statusCell.className = "mark-status";
+    const status = document.createElement("span");
+    status.classList.add("status-pill");
+    const error = annotation?.radius_difference_px ?? annotation?.radius_error_px;
+    const toleranceLimit = mark.tolerance_px ?? annotation?.tolerance_px;
+    const errorNumber = Number(error);
+    const limitNumber = Number(toleranceLimit);
+    const hasError = Number.isFinite(errorNumber);
+    const withinCurrentLimit = hasError && Number.isFinite(limitNumber) &&
+      errorNumber <= limitNumber + 1e-8;
+    if (annotation?.rgb_clipped || rgb?.some((v) => v === 0 || v === 255)) {
+      status.classList.add("status-excluded");
+      status.textContent = "不采用 · RGB 端点 0/255";
+    } else if (annotation?.adopted === true && withinCurrentLimit) {
+      status.classList.add("status-adopted");
+      status.textContent = (state.fitStale ? "采用（限差已改，待重新拟合）" : "采用") +
+        ` · 实际半径差 ${formatError(error)} px / 限差 ${formatError(toleranceLimit)} px`;
+    } else if (hasError) {
+      status.classList.add("status-rejected");
+      status.textContent = `未采用 · 实际半径差 ${formatError(error)} px / 限差 ${formatError(toleranceLimit)} px`;
+    } else if (annotation?.adopted === false) {
+      status.classList.add("status-rejected");
+      status.textContent = "未采用 · 不满足约束";
+    } else {
+      status.classList.add("status-pending");
+      status.textContent = "待建议";
+    }
+    tr.dataset.state = [...status.classList].find((name) => name.startsWith("status-")) || "pending";
+    tr.dataset.adopted = status.classList.contains("status-adopted") ? "true" : "false";
+    statusCell.append(status);
+    tr.append(statusCell);
+
+    const actionCell = document.createElement("td");
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-mark";
+    remove.dataset.markId = mark.id;
+    remove.setAttribute("aria-label", `删除标点 ${index + 1}`);
+    remove.textContent = "×";
+    actionCell.append(remove);
+    tr.append(actionCell);
+
+    rows.append(tr);
+  });
+  renderFitSummary();
+}
+
 function pointLabel(point) {
-  return "(" + point.x + ", " + point.y + ") · RGB " + point.rgb.join("/") +
-    " · 亮度 " + point.brightness.toFixed(2) + " · 距中心 " + point.distance_mm.toFixed(2) + " mm";
+  const parts = [
+    "(" + point.x + ", " + point.y + ")",
+    "原 RGB " + point.rgb.join("/"),
+    "亮度 " + point.brightness.toFixed(2),
+    "距当前中心 " + point.distance_mm.toFixed(2) + " mm",
+  ];
+  if (point.marked) {
+    const difference = point.radius_difference_px ?? point.radius_error_px;
+    const signed = point.radius_delta_px ?? point.signed_radius_difference_px;
+    const limit = point.tolerance_px;
+    if (point.rgb_clipped) {
+      parts.push("我标过的点：不采用（任一 RGB 通道为 0 或 255）");
+    } else if (point.adopted === true) {
+      parts.push("我标过的点：采用");
+      parts.push("实际半径差绝对值 " + formatError(difference) + " px" +
+        "（有符号 " + (Number(signed) >= 0 ? "+" : "") + formatError(signed) +
+        " / 限差 " + formatError(limit) + " px）");
+    } else if (point.adopted === false) {
+      parts.push("我标过的点：未采用");
+      if (Number.isFinite(Number(difference))) {
+        parts.push("实际半径差绝对值 " + formatError(difference) + " px" +
+          "（有符号 " + (Number(signed) >= 0 ? "+" : "") + formatError(signed) +
+          " / 限差 " + formatError(limit) + " px）");
+      }
+    } else {
+      parts.push("我标过的点：已保存，尚未采用拟合");
+    }
+  } else if (point.rgb_clipped) {
+    parts.push("RGB 含 0 或 255；若标为明纹点也不会采用");
+  }
+  return parts.join(" · ");
 }
 
 function show() {
   const {card, result} = state;
+  state.marks = card.ring_marks || result.ring_marks || result.ring?.marks || [];
+  state.ring = result.ring || null;
+  state.fit = card.ring_fit || result.ring_fit || result.ring?.fit || null;
+  state.fitStale = false;
   get("workspace").hidden = false;
   get("empty").hidden = true;
   get("origin").textContent = (card.synthetic ? "合成练习图" : "导入原片") + " · 修订 " + card.revision;
@@ -169,6 +408,7 @@ function show() {
   for (const [id, filename] of Object.entries({proof: "proof.png", csv: "profile.csv", zip: "observation.zip"})) {
     get(id).href = "/rippletrace" + route("/export/" + filename) + savedQuery();
   }
+  renderMarks();
   paintSource();
   paintChart();
 }
@@ -189,6 +429,38 @@ async function probe(x, y) {
   get("probe-y").value = y;
   get("probe-result").textContent = pointLabel(state.probe);
   paintSource();
+}
+
+async function persistMarks() {
+  const card = await api(route(""), {
+    method: "PATCH",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({revision: state.card.revision, ring_marks: state.marks}),
+  });
+  state.card = card;
+  state.marks = card.ring_marks || state.marks;
+  return card;
+}
+
+async function addMarkFromProbe(x, y) {
+  const existing = state.marks.find((mark) => mark.x === x && mark.y === y);
+  if (existing) {
+    notice("这个原片坐标已经标过；可在标点表中修改容差。", "fit-summary");
+    return;
+  }
+  state.marks.push({
+    id: "web-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+    x, y, tolerance_px: 2,
+    rgb: state.probe?.rgb || null,
+  });
+  state.fitStale = true;
+  renderMarks();
+  paintSource();
+  await persistMarks();
+  show();
+  state.fitStale = true;
+  renderFitSummary();
+  notice("已保存标点。请填写该点可差的最大像素数，然后点击“建议圆心（整数）与拟合半径”。", "fit-summary");
 }
 
 get("practice").addEventListener("click", () => action(async () => {
@@ -227,6 +499,10 @@ get("capture").addEventListener("click", (event) => {
   const y = Math.max(0, Math.min(canvas.height - 1, Math.floor((event.clientY - rect.top) * canvas.height / rect.height)));
   action(async () => {
     await probe(x, y);
+    if (state.mode === "ring") {
+      await addMarkFromProbe(x, y);
+      return;
+    }
     const field = (name) => settings.find((item) => item.dataset.setting === name);
     if (state.mode === "center") {
       field("center_x").value = x;
@@ -245,6 +521,92 @@ get("probe-form").addEventListener("submit", (event) => {
   event.preventDefault();
   action(() => probe(get("probe-x").value, get("probe-y").value));
 });
+
+get("mark-rows").addEventListener("input", (event) => {
+  const input = event.target.closest(".mark-tolerance");
+  if (!input) return;
+  const mark = state.marks.find((item) => String(item.id) === input.dataset.markId);
+  if (!mark) return;
+  const value = Number(input.value);
+  if (Number.isFinite(value) && value >= 0) mark.tolerance_px = value;
+});
+
+get("mark-rows").addEventListener("change", (event) => {
+  const input = event.target.closest(".mark-tolerance");
+  if (!input) return;
+  const mark = state.marks.find((item) => String(item.id) === input.dataset.markId);
+  const value = Number(input.value);
+  if (!mark || !Number.isFinite(value) || value < 0) {
+    input.value = mark?.tolerance_px ?? 2;
+    notice("容差必须是不小于 0 的像素数。", "fit-summary");
+    return;
+  }
+  mark.tolerance_px = value;
+  state.fitStale = true;
+  renderFitSummary();
+});
+
+get("mark-rows").addEventListener("click", (event) => {
+  const button = event.target.closest(".remove-mark");
+  if (!button) return;
+  action(async () => {
+    state.marks = state.marks.filter((item) => String(item.id) !== button.dataset.markId);
+    state.fitStale = true;
+    await persistMarks();
+    show();
+    state.fitStale = true;
+    renderFitSummary();
+    paintSource();
+  }, "fit-summary");
+});
+
+get("clear-marks").addEventListener("click", () => action(async () => {
+  state.marks = [];
+  state.fit = null;
+  state.ring = null;
+  state.fitStale = false;
+  const card = await api(route(""), {
+    method: "PATCH",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      revision: state.card.revision,
+      ring_marks: [],
+      ring_fit: null,
+    }),
+  });
+  await open(card);
+}, "fit-summary"));
+
+get("suggest-fit").addEventListener("click", () => action(async () => {
+  if (!state.marks.length) throw new Error("请先在“标明纹点”模式下点至少四处。");
+  for (const mark of state.marks) {
+    if (!Number.isFinite(Number(mark.tolerance_px)) || Number(mark.tolerance_px) < 0) {
+      throw new Error("每个标点都要填写不小于 0 的最大像素差。");
+    }
+  }
+  const fit = await api(route("/ring-fit/suggest"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({revision: state.card.revision, marks: state.marks}),
+  });
+  state.fit = fit;
+  state.fitStale = false;
+  renderMarks();
+  renderFitSummary();
+  paintSource();
+}, "fit-summary"));
+
+get("apply-fit").addEventListener("click", () => action(async () => {
+  if (!state.fit?.feasible) throw new Error("请先得到可行建议。");
+  const card = await api(route("/ring-fit/apply"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({revision: state.card.revision, marks: state.marks}),
+  });
+  await open(card);
+  await library();
+  notice("已采用新整数圆心；原片测量图和径向图均已按新中心重新读取。", "fit-summary");
+}, "fit-summary"));
 get("calibration").addEventListener("submit", (event) => {
   event.preventDefault();
   action(async () => {

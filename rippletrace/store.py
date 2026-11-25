@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from image_lab.validation import Conflict, Invalid, identifier, integer, object_value, text
 
-from . import ripple
+from . import ripple, ringfit
 
 
 class Cards:
@@ -70,6 +70,36 @@ class Cards:
             config = ripple.settings({**card["settings"], **incoming}, (card["width"], card["height"]))
             card.update(name=text(value.get("name", card["name"]), "水纹卡名称", 80, False),
                         settings=config, revision=card["revision"] + 1)
+
+            raw_marks = None
+            mark_keys = ("ring_marks", "marked_points", "control_points",
+                         "bright_points", "marks", "points")
+            for source in (value, incoming):
+                for field_name in mark_keys:
+                    if field_name in source:
+                        raw_marks = source[field_name]
+                        break
+                if raw_marks is not None:
+                    break
+            if raw_marks is not None:
+                card["ring_marks"] = ringfit.normalize_marks(
+                    raw_marks, card["width"], card["height"])
+
+            raw_fit = None
+            has_fit = False
+            fit_keys = ("ring_fit", "center_fit", "fit_suggestion", "suggestion", "fit")
+            for source in (value, incoming):
+                for field_name in fit_keys:
+                    if field_name in source:
+                        raw_fit = source[field_name]
+                        has_fit = True
+                        break
+                if has_fit:
+                    break
+            if has_fit:
+                card["ring_fit"] = ringfit.normalize_fit(
+                    raw_fit, card["width"], card["height"],
+                    config["inner"], config["outer"])
             self.commit(self.folder(key), card)
             return card
 

@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from image_lab.validation import integer, number
 
+from . import ringfit
 from .photo import decode, pixels, png, MAX_IMAGE_BYTES
 
 
@@ -32,13 +33,19 @@ def defaults(size):
                      "outer": max(12, min(width, height) // 3), "angle": 0, "mm_per_px": 1}, size)
 
 
-def point(image, x, y, config):
+def point(image, x, y, config, marks=None, fit=None):
     rgb = image[y, x]
     dx = x - config["center_x"]
     dy = y - config["center_y"]
     radius = math.hypot(dx, dy)
-    return {"x": x, "y": y, "rgb": rgb.tolist(), "brightness": float(rgb @ LUMA),
-            "distance_px": radius, "distance_mm": radius * config["mm_per_px"]}
+    result = {"x": x, "y": y, "rgb": rgb.tolist(),
+              "original_rgb": rgb.tolist(),
+              "brightness": float(rgb @ LUMA),
+              "distance_px": radius, "distance_mm": radius * config["mm_per_px"]}
+    if marks is not None or fit is not None:
+        result.update(ringfit.evaluate_probe(
+            result["rgb"], x, y, config, marks or [], fit))
+    return result
 
 
 def source_ray(image, config, angle):

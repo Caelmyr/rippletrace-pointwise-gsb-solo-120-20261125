@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23406e98' stroke-width='2'/%3E%3C/svg%3E">
   <title>RippleTrace · 俯拍水纹台</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='rippletrace.css') }}">
   <script defer src="{{ url_for('static', filename='rippletrace.js') }}"></script>
@@ -39,6 +40,7 @@
           <div><h2 id="card-title">原片</h2><span id="dimensions"></span></div>
           <div class="modes" role="group" aria-label="原照取样">
             <button id="probe-mode" data-mode="probe" aria-pressed="true" type="button">点读</button>
+            <button id="ring-mode" data-mode="ring" aria-pressed="false" type="button">标明纹点</button>
             <button id="center-mode" data-mode="center" aria-pressed="false" type="button">取中心</button>
             <button id="mark-mode" data-mode="mark" aria-pressed="false" type="button">取方向</button>
           </div>
@@ -50,6 +52,30 @@
             <label>Y <input id="probe-y" type="number" min="0" step="1" required></label>
             <button type="submit">读取</button></form>
           <span id="probe-result">选择原片像素</span>
+        </div>
+      </section>
+      <section class="panel ringfit" id="ringfit-panel" data-testid="ringfit-panel">
+        <div class="panel-head">
+          <div>
+            <h2>明纹圆心拟合</h2>
+            <span>标点保存在水纹卡中；圆心取原图像素整数，半径留在当前径段内</span>
+          </div>
+        </div>
+        <div class="ringfit-body">
+          <p class="ringfit-help">在上方选择“标明纹点”后点图。为每个点填写可差的最大像素数；任一 RGB 通道恰为 0 或 255 的点自动不用。建议结果中的每个采用点都满足半径差限差，且以新圆心划分的四个象限至少各有一个采用点；轴上点可用，但不代表象限。</p>
+          <div class="ringfit-actions">
+            <button id="suggest-fit" class="primary" type="button" data-testid="suggest-fit">建议圆心（整数）与拟合半径</button>
+            <button id="apply-fit" type="button" disabled data-testid="apply-fit">采用建议并更新两张测量图</button>
+            <button id="clear-marks" type="button">清空标点</button>
+          </div>
+          <p id="fit-summary" class="fit-summary" role="status" aria-live="polite" hidden></p>
+          <div class="mark-table-wrap">
+            <table class="mark-table">
+              <thead><tr><th>#</th><th>X</th><th>Y</th><th>原 RGB</th><th>最大差 px</th><th>象限</th><th>是否采用 · 实际半径差</th><th></th></tr></thead>
+              <tbody id="mark-rows" data-testid="mark-rows"></tbody>
+            </table>
+            <p id="marks-empty" class="marks-empty">还没有标点。切到“标明纹点”后，在原照片上点几处确认属于同一明纹的位置。</p>
+          </div>
         </div>
       </section>
       <section class="panel profile">

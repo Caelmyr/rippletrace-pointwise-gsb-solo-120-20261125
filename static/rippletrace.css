@@ -90,3 +90,26 @@ dialog .top-actions { justify-content: end; }
 .primary:hover { color: #f5faff; }
 
 .settings select { width: 100%; padding:5px 4px; font-size:12px; min-height:33px; }
+
+.ringfit-body { padding: 0 15px 14px; display: grid; gap: 11px; }
+.ringfit-help { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.ringfit-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ringfit-actions button { min-height: 32px; font-size: 12px; }
+#apply-fit:disabled { opacity: .55; cursor: not-allowed; }
+.fit-summary { margin: 0; padding: 9px 10px; border: 1px solid #bfd4e7; border-radius: 5px; background: #edf6ff; color: #284d70; font-size: 12px; line-height: 1.55; }
+.mark-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 5px; }
+.mark-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 720px; }
+.mark-table th, .mark-table td { padding: 6px 8px; border-bottom: 1px solid #e0e9f2; text-align: left; vertical-align: middle; white-space: nowrap; }
+.mark-table th { background: #eaf2fa; color: #3b536c; font-weight: 700; }
+.mark-table tr:last-child td { border-bottom: 0; }
+.mark-table input.mark-tolerance { width: 76px; min-height: 28px; padding: 3px 5px; }
+.rgb-cell { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #40566d; }
+.rgb-clipped { color: #9a5b24; font-weight: 700; }
+.status-pill { display: inline-block; max-width: 310px; white-space: normal; line-height: 1.4; padding: 3px 7px; border-radius: 999px; background: #e7edf3; color: #40566d; }
+.status-adopted { background: #dcf8e7; color: #17633a; }
+.status-rejected { background: #ffe3de; color: #913527; }
+.status-excluded { background: #e4e8ed; color: #5c6875; }
+.status-pending { background: #fff2d6; color: #7a5415; }
+.remove-mark { width: 27px; min-height: 27px; padding: 0; font-size: 16px; line-height: 1; }
+.marks-empty { margin: 0; padding: 12px; color: var(--muted); font-size: 12px; }
+#probe-result { display: block; flex-basis: 100%; line-height: 1.55; }

@@ -29,6 +29,35 @@ def proof(image, card, result):
         draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline="#669aad", width=1)
     draw.line((cx - 5, cy, cx + 5, cy), fill="#b5ebcc", width=2)
     draw.line((cx, cy - 5, cx, cy + 5), fill="#b5ebcc", width=2)
+    fit = card.get("ring_fit") if isinstance(card, dict) else None
+    if fit and fit.get("feasible") and fit.get("radius_px") is not None:
+        fcx = int(fit.get("center_x", cx))
+        fcy = int(fit.get("center_y", cy))
+        fit_radius = float(fit["radius_px"])
+        draw.ellipse((fcx - fit_radius, fcy - fit_radius,
+                      fcx + fit_radius, fcy + fit_radius),
+                     outline="#ffd166", width=2)
+        draw.line((fcx - 7, fcy, fcx + 7, fcy), fill="#ffd166", width=1)
+        draw.line((fcx, fcy - 7, fcx, fcy + 7), fill="#ffd166", width=1)
+    fit_points = {
+        (int(point["x"]), int(point["y"])): point
+        for point in (fit or {}).get("points", [])
+        if isinstance(point, dict) and "x" in point and "y" in point
+    }
+    marks = card.get("ring_marks", []) if isinstance(card, dict) else []
+    for index, mark in enumerate(marks, 1):
+        x, y = int(mark["x"]), int(mark["y"])
+        status = fit_points.get((x, y), {})
+        if status.get("rgb_clipped"):
+            color = "#9aa7b4"
+        elif status.get("adopted"):
+            color = "#7dffb0"
+        elif status.get("adopted") is False:
+            color = "#ff7b7b"
+        else:
+            color = "#f5e5e9"
+        draw.ellipse((x - 5, y - 5, x + 5, y + 5), outline=color, width=2)
+        draw.text((x + 7, y - 7), str(index), fill=color)
     if result["profile"]:
         draw.line([(p["x"], p["y"]) for p in result["profile"]], fill="#9be2d5", width=1)
     reading = result["reading"]

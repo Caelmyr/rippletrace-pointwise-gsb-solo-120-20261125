@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify, render_template, request, send_file, url_f
 from image_lab import create_app as preparation_app
 from image_lab.validation import Invalid, integer, object_value
 
-from . import exports, ripple
+from . import exports, ripple, ringfit
 from .store import Cards
 
 
@@ -65,15 +65,105 @@ def create_app(directory=None):
 
     @api.get("/cards/<key>/measurement")
     def measurement_json(key):
-        card, _, result = measurement(key)
-        return jsonify(revision=card["revision"], **result)
+        card, image, result = measurement(key)
+        marks = card.get("ring_marks", [])
+        fit = card.get("ring_fit")
+        ring_points = [
+            ripple.point(image, mark["x"], mark["y"], card["settings"], marks, fit)
+            for mark in marks
+        ]
+        ring = {"marks": marks, "fit": fit, "points": ring_points}
+        return jsonify(revision=card["revision"], **result, ring=ring,
+                       ring_marks=marks, ring_fit=fit)
 
     @api.get("/cards/<key>/probe")
     def probe(key):
         card = cards.read(key, request.args.get("revision"))
         x = integer(request.args.get("x"), "X", 0, card["width"] - 1)
         y = integer(request.args.get("y"), "Y", 0, card["height"] - 1)
-        return jsonify(ripple.point(ripple.pixels(cards.photo(key)), x, y, card["settings"]))
+        image = ripple.pixels(cards.photo(key))
+        return jsonify(ripple.point(image, x, y, card["settings"],
+                                   card.get("ring_marks"), card.get("ring_fit")))
+
+    def json_body():
+        value = request.get_json(silent=True)
+        if value is None:
+            return {}
+        if isinstance(value, list):
+            return {"ring_marks": value}
+        return object_value(value, "请求内容")
+
+    def fit_from_request(key, apply=False):
+        body = json_body()
+        revision = body.get("revision", request.args.get("revision"))
+        card = cards.read(key, revision)
+        image = ripple.pixels(cards.photo(key))
+        raw_marks = body.get(
+            "ring_marks",
+            body.get("marked_points",
+                     body.get("control_points",
+                              body.get("bright_points",
+                                       body.get("marks",
+                                                body.get("points",
+                                                         card.get("ring_marks", [])))))))
+        config = card["settings"]
+        fit = ringfit.suggest_ring_fit(
+            image, raw_marks, config["inner"], config["outer"],
+            current_center=(config["center_x"], config["center_y"]))
+        if not apply:
+            return fit, card, body
+
+        if not fit.get("feasible"):
+            raise Invalid(fit.get("message") or "没有满足全部约束的圆心")
+        update_body = {
+            "revision": card["revision"],
+            "settings": {"center_x": fit["center_x"], "center_y": fit["center_y"]},
+            "ring_marks": fit["points"],
+            "ring_fit": fit,
+        }
+        updated = cards.update(key, update_body)
+        return updated, card, body
+
+    @api.post("/cards/<key>/ring-fit/suggest")
+    @api.post("/cards/<key>/center-fit/suggest")
+    @api.post("/cards/<key>/fit/suggest")
+    def suggest_ring_fit(key):
+        fit, _, _ = fit_from_request(key, apply=False)
+        return jsonify(fit)
+
+    @api.post("/cards/<key>/ring-fit/apply")
+    @api.post("/cards/<key>/center-fit/apply")
+    @api.post("/cards/<key>/fit/apply")
+    def apply_ring_fit(key):
+        updated, _, _ = fit_from_request(key, apply=True)
+        return jsonify(updated)
+
+    @api.post("/cards/<key>/ring-fit")
+    @api.post("/cards/<key>/center-fit")
+    @api.post("/cards/<key>/fit")
+    def ring_fit(key):
+        body = json_body()
+        if body.get("apply") is True or request.args.get("apply") in {"1", "true", "yes"}:
+            updated, _, _ = fit_from_request(key, apply=True)
+            return jsonify(updated)
+        fit, _, _ = fit_from_request(key, apply=False)
+        return jsonify(fit)
+
+    @api.route("/cards/<key>/ring-marks", methods=["GET", "POST", "PUT", "PATCH"])
+    @api.route("/cards/<key>/ring-points", methods=["GET", "POST", "PUT", "PATCH"])
+    @api.route("/cards/<key>/marked-points", methods=["GET", "POST", "PUT", "PATCH"])
+    @api.route("/cards/<key>/control-points", methods=["GET", "POST", "PUT", "PATCH"])
+    @api.route("/cards/<key>/points", methods=["GET", "POST", "PUT", "PATCH"])
+    @api.route("/cards/<key>/marks", methods=["GET", "POST", "PUT", "PATCH"])
+    def ring_marks(key):
+        if request.method == "GET":
+            card = cards.read(key, request.args.get("revision"))
+            return jsonify(ring_marks=card.get("ring_marks", []),
+                           ring_fit=card.get("ring_fit"), revision=card["revision"])
+        body = json_body()
+        if "ring_marks" not in body and "marks" not in body:
+            body = {"revision": body.get("revision"), "ring_marks": body.get("points", [])}
+        return jsonify(cards.update(key, body))
 
     @api.get("/cards/<key>/export/profile.csv")
     def profile(key):
