@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RippleTrace · 俯拍水纹台</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='rippletrace.css') }}">
+  <script defer src="{{ url_for('static', filename='rippletrace.js') }}"></script>
+</head>
+<body>
+<header class="masthead">
+  <a class="brand" href="/"><i aria-hidden="true"></i> RippleTrace</a>
+  <span class="mast-label">俯拍水纹台</span>
+  <a class="external" href="/prepare">照片准备 ↗</a>
+</header>
+<main>
+  <section class="introduction">
+    <div><h1>波纹明带原片测量</h1><p>在水面俯拍原照上定好水纹中心和方向，读取径向照片亮带。</p></div>
+    <div class="top-actions">
+      <button id="practice" class="primary" type="button">打开练习水纹</button>
+      <button id="open-import" type="button">导入原片</button>
+    </div>
+  </section>
+  <p id="notice" class="notice" role="status" hidden></p>
+  <section class="library">
+    <label for="library">水纹卡</label>
+    <select id="library"><option value="">选取已存卡片</option></select>
+    <span id="origin"></span>
+  </section>
+  <section id="empty" class="empty">
+    <div class="ripple-icon" aria-hidden="true"><i></i></div>
+    <h2>选择一张水纹原照</h2>
+    <p>取一张俯拍照片，在原图上确认水纹中心并选一个量测方向。</p>
+  </section>
+  <section id="workspace" class="workspace" hidden>
+    <div class="left">
+      <section class="panel source">
+        <div class="panel-head">
+          <div><h2 id="card-title">原片</h2><span id="dimensions"></span></div>
+          <div class="modes" role="group" aria-label="原照取样">
+            <button id="probe-mode" data-mode="probe" aria-pressed="true" type="button">点读</button>
+            <button id="center-mode" data-mode="center" aria-pressed="false" type="button">取中心</button>
+            <button id="mark-mode" data-mode="mark" aria-pressed="false" type="button">取方向</button>
+          </div>
+        </div>
+        <div class="camera"><canvas id="capture" aria-label="水纹原照，可点击取样或输入原片像素坐标"></canvas></div>
+        <div class="probe">
+          <b>原片点读</b>
+          <form id="probe-form"><label>X <input id="probe-x" type="number" min="0" step="1" required></label>
+            <label>Y <input id="probe-y" type="number" min="0" step="1" required></label>
+            <button type="submit">读取</button></form>
+          <span id="probe-result">选择原片像素</span>
+        </div>
+      </section>
+      <section class="panel profile">
+        <div class="panel-head">
+          <div><h2 id="chart-title">单径向亮度</h2><span id="chart-caption">当前截线 · 整数半径步 · px</span></div>
+          <div class="modes" role="group" aria-label="当前图表">
+            <button data-chart="profile" aria-pressed="true" type="button">径向剖面</button>
+            <button data-chart="coverage" aria-pressed="false" type="button">按角度复查</button>
+          </div>
+        </div>
+        <canvas id="chart" width="850" height="166" aria-label="径向亮度和按角度原点分布"></canvas>
+      </section>
+    </div>
+    <aside class="right">
+      <section class="panel readout">
+        <div class="panel-head"><h2>当前最亮位置</h2><span id="measurement-state"></span></div>
+        <div class="radius"><strong id="radius-value">—</strong><span id="radius-unit"></span></div>
+        <p id="selected-level"></p>
+      </section>
+      <form id="calibration" class="panel settings">
+        <div class="panel-head"><div><h2>中心、径向和标尺</h2><span>0° 向右，90° 向下，按顺时针</span></div></div>
+        <label class="wide">卡片名称<input id="name" maxlength="80" required></label>
+        <fieldset><legend>原片中心与方向</legend><div class="form-grid">
+          <label>中心 X<input data-setting="center_x" type="number" step="1" min="0" required></label>
+          <label>中心 Y<input data-setting="center_y" type="number" step="1" min="0" required></label>
+          <label>角度 °<input data-setting="angle" type="number" step="1" min="0" max="359" required></label>
+        </div></fieldset>
+        <fieldset><legend>采样范围</legend><div class="form-grid">
+          <label>内半径 px<input data-setting="inner" type="number" step="1" min="1" required></label>
+          <label>外半径 px<input data-setting="outer" type="number" step="1" min="1" required></label>
+          <label>标尺 mm/px<input data-setting="mm_per_px" type="number" step="any" min="0.001" required></label>
+        </div></fieldset>
+        <button id="save" class="primary" type="submit">保存并测量</button>
+      </form>
+      <section class="panel outputs">
+        <div class="panel-head"><h2>水纹交接</h2></div>
+        <div><a id="proof" download>PNG 校样 ↓</a><a id="csv" download>CSV 读数 ↓</a><a id="zip" download>ZIP 水纹卡 ↓</a></div>
+        <button id="prepare" type="button">将原片送入照片准备 ↗</button>
+      </section>
+    </aside>
+  </section>
+</main>
+<dialog id="import">
+  <form id="upload">
+    <h2>导入水纹原照</h2>
+    <label>水纹卡名称<input name="name" maxlength="80" required></label>
+    <label>照片<input name="photo" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" required></label>
+    <p id="import-notice" role="status"></p>
+    <div class="top-actions"><button id="cancel-import" type="button">取消</button><button class="primary" type="submit">建立水纹卡</button></div>
+  </form>
+</dialog>
+</body>
+</html>

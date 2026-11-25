@@ -1,0 +1,16 @@
+name: solo123-rippletrace
+services:
+  desk:
+    build:
+      context: .
+      args:
+        RIPPLETRACE_DEPS_IMAGE: ${RIPPLETRACE_DEPS_IMAGE:-python:3.11-slim}
+    image: ${RIPPLETRACE_IMAGE:-solo123-rippletrace:1.0}
+    network_mode: bridge
+    ports:
+      - "127.0.0.1:${RIPPLETRACE_PORT:-19923}:8000"
+    volumes:
+      - measurements:/var/lib/rippletrace
+    init: true
+volumes:
+  measurements:
