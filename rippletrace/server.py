@@ -59,14 +59,92 @@ def create_app(directory=None):
         return send_file(cards.photo(key), mimetype="image/png", conditional=True)
 
     def measurement(key):
-        card = cards.read(key, request.args.get("revision"))
+        body = request.get_json(silent=True) if request.method == "POST" else None
+        revision = request.args.get("revision")
+        if revision is None and isinstance(body, dict):
+            revision = body.get("revision")
+        card = cards.read(key, revision)
         image = ripple.pixels(cards.photo(key))
-        return card, image, ripple.report(image, card["settings"])
+        angle_value = request.args.get("angle")
+        if angle_value is None and isinstance(body, dict):
+            angle_value = body.get("angle")
+        angle = integer(angle_value, "方向角度", 0, 359) if angle_value is not None else None
+        radius_value = None
+        for name in ("r_px", "start_radius", "radius", "start_r", "anchor_radius",
+                     "seed_radius", "seed", "start", "follow"):
+            radius_value = request.args.get(name)
+            if radius_value is not None:
+                break
+        if radius_value is None and isinstance(body, dict):
+            radius_value = body.get("r_px", body.get("start_radius",
+                                    body.get("radius", body.get("anchor_radius",
+                                    body.get("seed_radius", body.get("seed"))))))
+        if radius_value is not None:
+            radius = integer(radius_value, "起步半径", card["settings"]["inner"],
+                             card["settings"]["outer"])
+        else:
+            radius = None
+        return card, image, ripple.report(image, card["settings"], angle, radius)
 
     @api.get("/cards/<key>/measurement")
     def measurement_json(key):
         card, _, result = measurement(key)
         return jsonify(revision=card["revision"], **result)
+
+    def trace_request(key):
+        body = request.get_json(silent=True) if request.method == "POST" else {}
+        body = body if isinstance(body, dict) else {}
+        revision = request.args.get("revision", body.get("revision"))
+        card = cards.read(key, revision)
+        image = ripple.pixels(cards.photo(key))
+
+        def value(*names):
+            for name in names:
+                if name in request.args:
+                    return request.args.get(name)
+                if name in body and body[name] is not None:
+                    return body[name]
+            return None
+
+        radius_value = value("r_px", "start_radius", "start_radius_px", "radius",
+                             "start_r", "anchor_radius", "seed_radius",
+                             "seed", "start", "r")
+        radius = (integer(radius_value, "起步半径", card["settings"]["inner"],
+                          card["settings"]["outer"])
+                  if radius_value is not None else None)
+        angle_value = value("angle", "start_angle", "angle_start")
+        angle = (integer(angle_value, "方向角度", 0, 359)
+                 if angle_value is not None else card["settings"]["angle"])
+        result = ripple.trace_ripple(image, card["settings"], radius, angle=angle)
+        return jsonify(revision=card["revision"], **result)
+
+    @api.route("/cards/<key>/trace", methods=["GET", "POST"])
+    def trace_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/follow", methods=["GET", "POST"])
+    def follow_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/suggest", methods=["GET", "POST"])
+    def suggest_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/suggestion", methods=["GET", "POST"])
+    def suggestion_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/track", methods=["GET", "POST"])
+    def track_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/ripple-trace", methods=["GET", "POST"])
+    def ripple_trace_card(key):
+        return trace_request(key)
+
+    @api.route("/cards/<key>/follow-ripple", methods=["GET", "POST"])
+    def follow_ripple_card(key):
+        return trace_request(key)
 
     @api.get("/cards/<key>/probe")
     def probe(key):

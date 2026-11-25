@@ -41,6 +41,7 @@
             <button id="probe-mode" data-mode="probe" aria-pressed="true" type="button">点读</button>
             <button id="center-mode" data-mode="center" aria-pressed="false" type="button">取中心</button>
             <button id="mark-mode" data-mode="mark" aria-pressed="false" type="button">取方向</button>
+            <button id="anchor-mode" data-mode="anchor" aria-pressed="false" type="button">确认起步半径</button>
           </div>
         </div>
         <div class="camera"><canvas id="capture" aria-label="水纹原照，可点击取样或输入原片像素坐标"></canvas></div>
@@ -60,7 +61,16 @@
             <button data-chart="coverage" aria-pressed="false" type="button">按角度复查</button>
           </div>
         </div>
-        <canvas id="chart" width="850" height="166" aria-label="径向亮度和按角度原点分布"></canvas>
+        <canvas id="chart" width="850" height="166" aria-label="径向亮度和按角度原点分布，可点选半径或方向"></canvas>
+        <div id="trace" class="trace-bar" data-testid="ripple-trace">
+          <label for="trace-radius">确认起步半径 px
+            <input id="trace-radius" type="number" step="1" min="1" inputmode="numeric">
+          </label>
+          <button id="trace-run" class="primary" type="button" data-testid="follow-ripple">跟踪这条水纹</button>
+          <button id="trace-adopt" type="button" hidden data-testid="adopt-trace">采用建议</button>
+          <button id="trace-clear" type="button" hidden>清除跟踪</button>
+          <span id="trace-status" role="status">可直接点上方径向剖面确认原半径步。</span>
+        </div>
       </section>
     </div>
     <aside class="right">
