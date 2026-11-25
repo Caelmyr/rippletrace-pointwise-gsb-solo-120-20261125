@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from image_lab.validation import integer, number
 
+from . import spacing
 from .photo import decode, pixels, png, MAX_IMAGE_BYTES
 
 
@@ -23,13 +24,15 @@ def settings(value, size):
         "inner": inner, "outer": integer(value.get("outer"), "外半径", inner, max_radius),
         "angle": integer(value.get("angle"), "方向角度", 0, 359),
         "mm_per_px": number(value.get("mm_per_px"), "标尺", 0.001, 500),
+        "spacing": spacing.parameters(value.get("spacing") or {}),
     }
 
 
 def defaults(size):
     width, height = size
     return settings({"center_x": width // 2, "center_y": height // 2, "inner": 12,
-                     "outer": max(12, min(width, height) // 3), "angle": 0, "mm_per_px": 1}, size)
+                     "outer": max(12, min(width, height) // 3), "angle": 0, "mm_per_px": 1,
+                     "spacing": {"spacing_min": 5, "spacing_max": 100, "tolerance": 2}}, size)
 
 
 def point(image, x, y, config):
@@ -75,10 +78,35 @@ def report(image, config):
     return {
         "reading": peak(image, config, config["angle"]),
         "profile": profile(image, config),
+        "train": train(image, config),
         "angular": [{"angle": angle, "peak": peak(image, config, angle)}
                     for angle in range(0, 360, ANGLE_INTERVAL)],
         "focus": config["angle"],
     }
+
+
+def locate(image, config, radius):
+    """The original pixel sampled at one integer radius on the current ray, or None outside the photo."""
+    height, width = image.shape[:2]
+    radians = math.radians(config["angle"])
+    x = math.floor(config["center_x"] + radius * math.cos(radians) + 0.5)
+    y = math.floor(config["center_y"] + radius * math.sin(radians) + 0.5)
+    if 0 <= x < width and 0 <= y < height:
+        return int(x), int(y)
+    return None
+
+
+def train(image, config):
+    samples = [{key: sample[key] for key in ("r_px", "x", "y", "rgb", "brightness")}
+               for sample in profile(image, config)]
+    return spacing.solve(samples, config["spacing"],
+                         lambda radius: locate(image, config, radius), config["mm_per_px"])
+
+
+def suggestion(image, config):
+    samples = [{key: sample[key] for key in ("r_px", "x", "y", "rgb", "brightness")}
+               for sample in profile(image, config)]
+    return spacing.defaults(samples)
 
 
 def practice():

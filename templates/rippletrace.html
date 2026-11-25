@@ -15,7 +15,7 @@
 </header>
 <main>
   <section class="introduction">
-    <div><h1>波纹明带原片测量</h1><p>在水面俯拍原照上定好水纹中心和方向，读取径向照片亮带。</p></div>
+    <div><h1>波纹明带原片测量</h1><p>在水面俯拍原照上定好水纹中心和方向，沿当前径向原样本选用同一波距核对的亮峰序列。</p></div>
     <div class="top-actions">
       <button id="practice" class="primary" type="button">打开练习水纹</button>
       <button id="open-import" type="button">导入原片</button>
@@ -68,6 +68,14 @@
         <div class="panel-head"><h2>当前最亮位置</h2><span id="measurement-state"></span></div>
         <div class="radius"><strong id="radius-value">—</strong><span id="radius-unit"></span></div>
         <p id="selected-level"></p>
+        <div class="panel-head train-head"><h2>波距核对</h2><span id="train-state"></span></div>
+        <div class="radius"><strong id="train-value">—</strong><span id="train-unit"></span></div>
+        <p id="train-note"></p>
+        <ol id="train-peaks" class="train-peaks"></ol>
+        <div class="detail">
+          <canvas id="detail" width="480" height="120" aria-label="已采用亮峰的原片像素与两侧暗邻点放大"></canvas>
+          <p id="detail-caption"></p>
+        </div>
       </section>
       <form id="calibration" class="panel settings">
         <div class="panel-head"><div><h2>中心、径向和标尺</h2><span>0° 向右，90° 向下，按顺时针</span></div></div>
@@ -82,11 +90,16 @@
           <label>外半径 px<input data-setting="outer" type="number" step="1" min="1" required></label>
           <label>标尺 mm/px<input data-setting="mm_per_px" type="number" step="any" min="0.001" required></label>
         </div></fieldset>
+        <fieldset><legend>建议波距范围与允许像素误差</legend><div class="form-grid">
+          <label>波距下限 px<input data-spacing="spacing_min" type="number" step="any" min="0.001" required></label>
+          <label>波距上限 px<input data-spacing="spacing_max" type="number" step="any" min="0.001" required></label>
+          <label>允许误差 ±px<input data-spacing="tolerance" type="number" step="any" min="0" required></label>
+        </div><button id="suggest" class="suggest" type="button">从当前径线取建议值</button></fieldset>
         <button id="save" class="primary" type="submit">保存并测量</button>
       </form>
       <section class="panel outputs">
         <div class="panel-head"><h2>水纹交接</h2></div>
-        <div><a id="proof" download>PNG 校样 ↓</a><a id="csv" download>CSV 读数 ↓</a><a id="zip" download>ZIP 水纹卡 ↓</a></div>
+        <div><a id="proof" download>PNG 校样 ↓</a><a id="csv" download>CSV 读数 ↓</a><a id="train-csv" download>峰表 CSV ↓</a><a id="zip" download>ZIP 水纹卡 ↓</a></div>
         <button id="prepare" type="button">将原片送入照片准备 ↗</button>
       </section>
     </aside>

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from image_lab.validation import Conflict, Invalid, identifier, integer, object_value, text
 
-from . import ripple
+from . import ripple, spacing
 
 
 class Cards:
@@ -25,6 +25,8 @@ class Cards:
     def read(self, key, revision=None):
         with self.lock:
             card = json.loads((self.folder(key) / "card.json").read_text())
+            if "spacing" not in card["settings"]:
+                card["settings"] = ripple.settings(card["settings"], (card["width"], card["height"]))
             if revision is not None and integer(revision, "工作版本", 1) != card["revision"]:
                 raise Conflict("水纹卡已经改动，请重新打开")
             return card
@@ -67,6 +69,8 @@ class Cards:
         with self.lock:
             card = self.read(key, integer(value.get("revision"), "工作版本", 1))
             incoming = object_value(value.get("settings", {}), "水纹设置")
+            if "spacing" in incoming:
+                incoming["spacing"] = spacing.parameters(incoming["spacing"])
             config = ripple.settings({**card["settings"], **incoming}, (card["width"], card["height"]))
             card.update(name=text(value.get("name", card["name"]), "水纹卡名称", 80, False),
                         settings=config, revision=card["revision"] + 1)

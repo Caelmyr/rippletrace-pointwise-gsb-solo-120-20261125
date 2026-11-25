@@ -68,6 +68,11 @@ def create_app(directory=None):
         card, _, result = measurement(key)
         return jsonify(revision=card["revision"], **result)
 
+    @api.get("/cards/<key>/suggestion")
+    def suggestion(key):
+        card = cards.read(key, request.args.get("revision"))
+        return jsonify(ripple.suggestion(ripple.pixels(cards.photo(key)), card["settings"]))
+
     @api.get("/cards/<key>/probe")
     def probe(key):
         card = cards.read(key, request.args.get("revision"))
@@ -84,6 +89,11 @@ def create_app(directory=None):
     def proof(key):
         card, image, result = measurement(key)
         return download(exports.proof(image, card, result), "image/png", "ripple-proof.png")
+
+    @api.get("/cards/<key>/export/train.csv")
+    def train_table(key):
+        _, _, result = measurement(key)
+        return download(exports.train_table(result), "text/csv", "ripple-train.csv")
 
     @api.get("/cards/<key>/export/observation.zip")
     def bundle(key):

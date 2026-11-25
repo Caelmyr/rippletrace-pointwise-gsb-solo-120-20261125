@@ -1,8 +1,10 @@
 "use strict";
 
 const get = (id) => document.getElementById(id);
-const state = {card: null, result: null, photo: null, probe: null, mode: "probe", chart: "profile", busy: false};
+const state = {card: null, result: null, photo: null, probe: null, mode: "probe", chart: "profile",
+               busy: false, activePeak: null};
 const settings = [...document.querySelectorAll("[data-setting]")];
+const spacingFields = [...document.querySelectorAll("[data-spacing]")];
 
 async function api(path, options) {
   const response = await fetch("/rippletrace" + path, options);
@@ -82,9 +84,56 @@ function paintSource() {
     ctx.arc(result.reading.x, result.reading.y, 6, 0, Math.PI * 2);
     ctx.stroke();
   }
+  paintTrain(ctx);
   if (probe) {
     ctx.strokeStyle = "#f5e5e9";
     ctx.strokeRect(probe.x - 6, probe.y - 6, 12, 12);
+  }
+}
+
+function trainPeaks() {
+  return state.result?.train?.feasible ? state.result.train.peaks : [];
+}
+
+function trainAt(x, y) {
+  return trainPeaks().find((peak) => peak.x === x && peak.y === y) || null;
+}
+
+function nearestPeak(x, y, reach) {
+  let best = null;
+  for (const peak of trainPeaks()) {
+    const distance = Math.hypot(peak.x - x, peak.y - y);
+    if (distance <= reach && (!best || distance < best.distance)) best = {peak, distance};
+  }
+  return best?.peak || null;
+}
+
+function paintTrain(ctx) {
+  const train = state.result?.train;
+  if (!train?.feasible) return;
+  for (const peak of train.peaks) {
+    const active = state.probe && peak.x === state.probe.x && peak.y === state.probe.y;
+    ctx.strokeStyle = state.activePeak === peak.number ? "#ffe9a8" : active ? "#f3d47c" : "#e0b53f";
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(peak.x, peak.y, active ? 9 : 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#1c3350";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(String(peak.number), peak.x + 8, peak.y - 7);
+  }
+  for (const hole of train.missing) {
+    ctx.strokeStyle = "#f2a3a3";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hole.x - 5, hole.y - 5);
+    ctx.lineTo(hole.x + 5, hole.y + 5);
+    ctx.moveTo(hole.x + 5, hole.y - 5);
+    ctx.lineTo(hole.x - 5, hole.y + 5);
+    ctx.stroke();
+    ctx.fillStyle = "#f2a3a3";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText("缺峰 " + hole.r_px, hole.x + 8, hole.y + 13);
   }
 }
 
@@ -138,6 +187,82 @@ function paintChart() {
     ctx.arc(xAt(result.reading.r_px), yAt(result.reading.brightness), 4, 0, Math.PI * 2);
     ctx.fill();
   }
+  if (!angular) paintTrainChart(ctx, xAt, yAt);
+}
+
+function paintTrainChart(ctx, xAt, yAt) {
+  const train = state.result?.train;
+  if (!train?.feasible) return;
+  for (const peak of train.peaks) {
+    const active = state.activePeak === peak.number;
+    ctx.strokeStyle = active ? "#ffe9a8" : "#c99a2e";
+    ctx.lineWidth = active ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(xAt(peak.r_px), yAt(peak.brightness), active ? 6 : 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#6a4a12";
+    ctx.font = "bold 11px monospace";
+    ctx.fillText(String(peak.number), xAt(peak.r_px) + 6, yAt(peak.brightness) - 6);
+  }
+  for (const hole of train.missing) {
+    ctx.strokeStyle = "#c05252";
+    ctx.lineWidth = 2;
+    const x = xAt(hole.r_px);
+    const y = yAt(255 * .5);
+    ctx.beginPath();
+    ctx.moveTo(x, y - 16);
+    ctx.lineTo(x, y - 4);
+    ctx.stroke();
+    ctx.fillStyle = "#c05252";
+    ctx.font = "11px monospace";
+    ctx.fillText("缺", x - 4, y - 20);
+  }
+  ctx.fillStyle = "#6a4a12";
+  ctx.font = "11px monospace";
+  ctx.fillText("波距 " + train.spacing_px.toFixed(2) + " px / " + train.spacing_mm.toFixed(3) + " mm", 52, 16);
+}
+
+function paintProbeDetail() {
+  const canvas = get("detail");
+  const ctx = canvas.getContext("2d");
+  const {photo, card, probe} = state;
+  const peak = probe ? trainAt(probe.x, probe.y) : null;
+  if (!photo || !peak) {
+    get("detail-caption").textContent = state.probe
+      ? "原片 (" + state.probe.x + ", " + state.probe.y + ") 不是已采用的亮峰。"
+      : "选中已采用亮峰后，这里放大原片像素与两侧暗邻点。";
+    canvas.width = 480;
+    canvas.height = 120;
+    ctx.fillStyle = "#eff6fc";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  const scale = 9;
+  const half = 3;
+  canvas.width = (half * 2 + 1) * scale;
+  canvas.height = canvas.width;
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#16283d";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(photo, peak.x - half, peak.y - half, half * 2 + 1, half * 2 + 1,
+                0, 0, canvas.width, canvas.height);
+  const spot = (point, color, tag) => {
+    const dx = point.x - (peak.x - half);
+    const dy = point.y - (peak.y - half);
+    if (dx < 0 || dy < 0 || dx > half * 2 || dy > half * 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dx * scale + 1, dy * scale + 1, scale - 2, scale - 2);
+    ctx.fillStyle = color;
+    ctx.font = "10px monospace";
+    ctx.fillText(tag, dx * scale + 2, dy * scale + 11);
+  };
+  spot(peak.before, "#9fc7e8", "L");
+  spot(peak.after, "#9fc7e8", "R");
+  spot(peak, "#ffe9a8", "P");
+  get("detail-caption").textContent = "第 " + peak.number + " 峰原片像素 (" + peak.x + ", " + peak.y + ") · RGB " +
+    peak.rgb.join("/") + " · 左(" + peak.before.x + ", " + peak.before.y + ") 亮度 " + peak.before.brightness.toFixed(1) +
+    " · 右(" + peak.after.x + ", " + peak.after.y + ") 亮度 " + peak.after.brightness.toFixed(1) + " · 均比峰暗。";
 }
 
 function pointLabel(point) {
@@ -154,11 +279,13 @@ function show() {
   get("dimensions").textContent = card.width + " × " + card.height + " px · " + card.photo_name;
   get("name").value = card.name;
   for (const field of settings) field.value = card.settings[field.dataset.setting];
+  for (const field of spacingFields) field.value = card.settings.spacing[field.dataset.spacing];
   get("probe-x").max = card.width - 1;
   get("probe-y").max = card.height - 1;
   get("probe-x").value = state.probe?.x ?? result.reading?.x ?? card.settings.center_x;
   get("probe-y").value = state.probe?.y ?? result.reading?.y ?? card.settings.center_y;
   get("probe-result").textContent = state.probe ? pointLabel(state.probe) : "选择原片像素";
+  paintProbeDetail();
   const reading = result.reading;
   get("radius-value").textContent = reading ? reading.r_mm.toFixed(2) : "—";
   get("radius-unit").textContent = "mm";
@@ -166,10 +293,68 @@ function show() {
   get("selected-level").textContent = reading
     ? reading.r_px + " px · 原片 (" + reading.x + ", " + reading.y + ") · 亮度 " + reading.brightness.toFixed(2)
     : "这个方向未覆盖原片像素";
-  for (const [id, filename] of Object.entries({proof: "proof.png", csv: "profile.csv", zip: "observation.zip"})) {
+  showTrain();
+  for (const [id, filename] of Object.entries({proof: "proof.png", csv: "profile.csv",
+                                               "train-csv": "train.csv", zip: "observation.zip"})) {
     get(id).href = "/rippletrace" + route("/export/" + filename) + savedQuery();
   }
   paintSource();
+  paintChart();
+}
+
+function showTrain() {
+  const train = state.result?.train;
+  const list = get("train-peaks");
+  list.replaceChildren();
+  if (!train || !train.feasible) {
+    get("train-value").textContent = "—";
+    get("train-unit").textContent = "";
+    get("train-state").textContent = "不可行";
+    get("train-note").textContent = train?.reason || "当前径线还没有可用亮峰。";
+    if (train?.candidates.length) {
+      const row = document.createElement("li");
+      row.className = "train-hole";
+      row.textContent = "可用亮峰半径：" + train.candidates.map((item) => item.r_px).join("、") +
+        " px（" + train.candidate_count + " 个）";
+      list.append(row);
+    }
+    return;
+  }
+  if (train.missing.length) {
+    get("train-value").textContent = train.spacing_mm.toFixed(3);
+    get("train-unit").textContent = "mm / 峰（一次两倍核对）";
+  } else {
+    get("train-value").textContent = train.spacing_mm.toFixed(3);
+    get("train-unit").textContent = "mm / 峰";
+  }
+  get("train-state").textContent = train.peak_count + " 峰 · 最大偏差 " +
+    train.worst_deviation_px.toFixed(2) + " px / " + train.worst_deviation_mm.toFixed(3) + " mm";
+  get("train-note").textContent = train.note;
+  for (const peak of train.peaks) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "train-peak";
+    button.textContent = peak.number + " · " + peak.r_px + " px / " + peak.r_mm.toFixed(2) + " mm · (" +
+      peak.x + ", " + peak.y + ") · 亮度 " + peak.brightness.toFixed(1);
+    button.setAttribute("aria-pressed", String(state.activePeak === peak.number));
+    button.addEventListener("click", () => action(() => pickPeak(peak)));
+    item.append(button);
+    list.append(item);
+    const hole = train.missing.find((item) => item.after_peak === peak.number);
+    if (hole) {
+      const blank = document.createElement("li");
+      blank.className = "train-hole";
+      blank.textContent = "缺峰留空 · " + hole.r_px + " px / " + hole.r_mm.toFixed(2) + " mm · (" +
+        hole.x + ", " + hole.y + ") · " + hole.note;
+      list.append(blank);
+    }
+  }
+}
+
+async function pickPeak(peak) {
+  await probe(peak.x, peak.y);
+  showTrain();
   paintChart();
 }
 
@@ -178,17 +363,20 @@ async function open(card) {
   const photo = new Image();
   photo.src = "/rippletrace" + base + "/capture.png";
   const [result] = await Promise.all([api(base + "/measurement?revision=" + card.revision), photo.decode()]);
-  Object.assign(state, {card, result, photo, probe: null});
+  Object.assign(state, {card, result, photo, probe: null, activePeak: null});
   get("library").value = card.id;
   show();
 }
 
 async function probe(x, y) {
   state.probe = await api(route("/probe") + savedQuery() + "&x=" + x + "&y=" + y);
+  const match = trainAt(x, y);
+  state.activePeak = match ? match.number : null;
   get("probe-x").value = x;
   get("probe-y").value = y;
   get("probe-result").textContent = pointLabel(state.probe);
   paintSource();
+  paintProbeDetail();
 }
 
 get("practice").addEventListener("click", () => action(async () => {
@@ -225,7 +413,14 @@ get("capture").addEventListener("click", (event) => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.max(0, Math.min(canvas.width - 1, Math.floor((event.clientX - rect.left) * canvas.width / rect.width)));
   const y = Math.max(0, Math.min(canvas.height - 1, Math.floor((event.clientY - rect.top) * canvas.height / rect.height)));
+  const peak = trainAt(x, y);
   action(async () => {
+    const picked = peak || nearestPeak(x, y, Math.max(2, Math.round(canvas.width / 240)));
+    if (picked) {
+      await pickPeak(picked);
+      notice("已回到第 " + picked.number + " 峰的原片像素，可用点读核对两侧暗邻点。");
+      return;
+    }
     await probe(x, y);
     const field = (name) => settings.find((item) => item.dataset.setting === name);
     if (state.mode === "center") {
@@ -245,11 +440,19 @@ get("probe-form").addEventListener("submit", (event) => {
   event.preventDefault();
   action(() => probe(get("probe-x").value, get("probe-y").value));
 });
+get("suggest").addEventListener("click", () => action(async () => {
+  const values = await api(route("/suggestion") + savedQuery());
+  for (const field of spacingFields) field.value = values[field.dataset.spacing];
+  notice("已按当前径线的候选峰距填入建议值，可再收窄后保存。");
+}));
 get("calibration").addEventListener("submit", (event) => {
   event.preventDefault();
   action(async () => {
     const fields = Object.fromEntries(settings.map((field) => [
       field.dataset.setting, Number(field.value),
+    ]));
+    fields.spacing = Object.fromEntries(spacingFields.map((field) => [
+      field.dataset.spacing, Number(field.value),
     ]));
     const card = await api(route(""), {
       method: "PATCH", headers: {"Content-Type": "application/json"},

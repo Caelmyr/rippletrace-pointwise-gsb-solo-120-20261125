@@ -90,3 +90,16 @@ dialog .top-actions { justify-content: end; }
 .primary:hover { color: #f5faff; }
 
 .settings select { width: 100%; padding:5px 4px; font-size:12px; min-height:33px; }
+
+.train-head { border-top: 1px solid var(--line); }
+#train-value { font-size: 27px; }
+#train-note { padding-bottom: 6px; }
+.train-peaks { list-style: none; margin: 0 15px 14px; padding: 0; display: grid; gap: 4px; font-size: 11px; }
+.train-peaks li { min-width: 0; }
+.train-peak { width: 100%; min-height: 27px; padding: 4px 7px; text-align: left; font: 11px/1.35 monospace; color: #5a4415; background: #fbf1d6; border-color: #d9bd78; }
+.train-peak[aria-pressed="true"] { background: #f6e3ab; border-color: #a98428; }
+.train-hole { padding: 4px 7px; color: #8c3c3c; background: #fbe7e7; border: 1px dashed #d9a1a1; border-radius: 5px; line-height: 1.35; }
+.detail { margin: 0 15px 15px; padding-top: 10px; border-top: 1px solid var(--line); }
+#detail { display: block; width: 100%; max-width: 171px; height: auto; margin-bottom: 7px; image-rendering: pixelated; background: #16283d; border-radius: 4px; }
+#detail-caption { color: var(--muted); font: 11px/1.45 monospace; }
+.suggest { width: 100%; min-height: 27px; margin-top: 8px; padding: 3px 8px; font-size: 11px; }
